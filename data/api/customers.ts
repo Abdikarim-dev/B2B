@@ -82,3 +82,24 @@ export const createSupplier = async (data: Omit<Supplier, 'id' | 'createdAt' | '
   supplierStore = [newSupplier, ...supplierStore]
   return successResponse(newSupplier, 'Supplier created')
 }
+
+export const fetchSupplier = async (id: string) => {
+  await delay()
+  const supplier = supplierStore.find((s) => s.id === id)
+  if (!supplier) throw new Error(`Supplier ${id} not found`)
+  return successResponse(supplier)
+}
+
+export const updateSupplier = async (id: string, data: Partial<Supplier>) => {
+  await delay()
+  const idx = supplierStore.findIndex((s) => s.id === id)
+  if (idx === -1) throw new Error(`Supplier ${id} not found`)
+  supplierStore[idx] = { ...supplierStore[idx], ...data, updatedAt: new Date().toISOString() }
+  return successResponse(supplierStore[idx], 'Supplier updated')
+}
+
+export const deleteSupplier = async (id: string) => {
+  await delay()
+  supplierStore = supplierStore.filter((s) => s.id !== id)
+  return successResponse(null, 'Supplier deleted')
+}

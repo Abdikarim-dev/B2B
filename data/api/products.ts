@@ -38,6 +38,20 @@ export const createCategory = async (data: Omit<Category, 'id' | 'createdAt'>) =
   return successResponse(newCat, 'Category created')
 }
 
+export const updateCategory = async (id: string, data: Partial<Category>) => {
+  await delay()
+  const idx = categoryStore.findIndex((c) => c.id === id)
+  if (idx === -1) throw new Error(`Category ${id} not found`)
+  categoryStore[idx] = { ...categoryStore[idx], ...data }
+  return successResponse(categoryStore[idx], 'Category updated')
+}
+
+export const deleteCategory = async (id: string) => {
+  await delay()
+  categoryStore = categoryStore.filter((c) => c.id !== id)
+  return successResponse(null, 'Category deleted')
+}
+
 // ─── Products ─────────────────────────────────────────────────────────────────
 
 export const fetchProducts = async (params: FetchProductsParams = {}) => {

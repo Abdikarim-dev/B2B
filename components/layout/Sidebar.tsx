@@ -8,6 +8,7 @@ import {
   GitBranch,
   Users,
   ShieldCheck,
+  FolderOpen,
   Package,
   Boxes,
   UserCheck,
@@ -84,6 +85,12 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: 'Catalog',
     items: [
+      {
+        label: 'Categories',
+        href: '/categories',
+        icon: FolderOpen,
+        requiredPermissions: ['products.view'],
+      },
       {
         label: 'Products',
         href: '/products',
