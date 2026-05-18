@@ -138,7 +138,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       {
         label: 'Invoices',
-        href: '/invoices',
+        href: '/invoices/new',
         icon: FileText,
         requiredPermissions: ['invoices.view'],
       },
