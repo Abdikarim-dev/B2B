@@ -613,23 +613,23 @@ export default function InventoryPage() {
           <StatCard
             title="Total Items"
             value={stats.totalItems}
-            icon={<Package className="h-5 w-5" />}
+            icon={Package}
           />
           <StatCard
             title="Total Quantity"
             value={stats.totalQuantity.toLocaleString()}
-            icon={<Package className="h-5 w-5" />}
+            icon={Package}
           />
           <StatCard
             title="Low Stock"
             value={stats.lowStockCount}
-            icon={<TrendingDown className="h-5 w-5" />}
+            icon={TrendingDown}
             trend={stats.lowStockCount > 0 ? 'down' : undefined}
           />
           <StatCard
             title="Out of Stock"
             value={stats.outOfStockCount}
-            icon={<AlertTriangle className="h-5 w-5" />}
+            icon={AlertTriangle}
             trend={stats.outOfStockCount > 0 ? 'down' : undefined}
           />
         </div>
