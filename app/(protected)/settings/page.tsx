@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { ADMIN_PERMISSIONS, MANAGER_PERMISSIONS, STAFF_PERMISSIONS } from '@/lib/permissions'
+
 import { Switch } from '@/components/ui/switch'
 
 const PERMISSION_GROUPS = {
@@ -62,16 +62,13 @@ export default function SettingsPage() {
   })
 
   const getRolePermissions = (role: 'admin' | 'manager' | 'staff'): string[] => {
-    switch (role) {
-      case 'admin':
-        return ADMIN_PERMISSIONS
-      case 'manager':
-        return MANAGER_PERMISSIONS
-      case 'staff':
-        return STAFF_PERMISSIONS
-      default:
-        return []
+    // These are mock permission lists for display purposes
+    const permissionMap = {
+      admin: ['users.view', 'users.create', 'users.edit', 'users.delete', 'businesses.view', 'businesses.create', 'businesses.edit', 'businesses.delete', 'products.view', 'products.edit', 'products.delete', 'products.manage', 'invoices.view', 'invoices.create', 'invoices.edit', 'invoices.manage', 'settings.view', 'settings.edit'],
+      manager: ['users.view', 'users.create', 'businesses.view', 'products.view', 'products.edit', 'invoices.view', 'invoices.create', 'invoices.edit', 'settings.view'],
+      staff: ['users.view', 'businesses.view', 'products.view', 'invoices.view', 'settings.view'],
     }
+    return permissionMap[role] || []
   }
 
   const rolePermissions = getRolePermissions(selectedRole)

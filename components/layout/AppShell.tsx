@@ -22,7 +22,7 @@ export function AppShell({ user, children, onLogout }: AppShellProps) {
 
       {/* Mobile Sidebar (Sheet) */}
       <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
-        <SheetContent side="left" className="p-0 w-64">
+        <SheetContent side="left" className="p-0 w-64 border-0">
           <Sidebar
             user={user}
             className="flex h-full"
@@ -38,7 +38,7 @@ export function AppShell({ user, children, onLogout }: AppShellProps) {
           onMobileMenuToggle={() => setMobileMenuOpen(true)}
           onLogout={onLogout}
         />
-        <main className="flex-1 overflow-y-auto bg-slate-50">
+        <main className="flex-1 overflow-y-auto bg-[#F8FAFC]">
           {children}
         </main>
       </div>

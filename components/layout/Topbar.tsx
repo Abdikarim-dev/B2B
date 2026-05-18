@@ -1,5 +1,7 @@
 'use client'
 
+import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import { Bell, LogOut, Settings, User, Menu } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
@@ -13,14 +15,41 @@ import {
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import type { AuthUser } from '@/types'
 
+/** Maps route path segments to human-readable page titles. */
+const PAGE_TITLE_MAP: Record<string, string> = {
+  dashboard: 'Dashboard',
+  businesses: 'Businesses',
+  branches: 'Branches',
+  users: 'Users',
+  roles: 'Roles',
+  products: 'Products',
+  inventory: 'Inventory',
+  customers: 'Customers',
+  suppliers: 'Suppliers',
+  invoices: 'Invoices',
+  receipts: 'Receipts',
+  payments: 'Payments',
+  expenses: 'Expenses',
+  reports: 'Reports',
+  'audit-logs': 'Audit Logs',
+  settings: 'Settings',
+}
+
+function usePageTitle(): string {
+  const pathname = usePathname()
+  const segment = pathname.split('/').filter(Boolean).at(-1) ?? ''
+  return PAGE_TITLE_MAP[segment] ?? ''
+}
+
 interface TopbarProps {
   user: AuthUser | null
   onMobileMenuToggle?: () => void
   onLogout?: () => void
-  pageTitle?: string
 }
 
-export function Topbar({ user, onMobileMenuToggle, onLogout, pageTitle }: TopbarProps) {
+export function Topbar({ user, onMobileMenuToggle, onLogout }: TopbarProps) {
+  const pageTitle = usePageTitle()
+
   const initials = user?.name
     ? user.name
         .split(' ')
@@ -31,8 +60,8 @@ export function Topbar({ user, onMobileMenuToggle, onLogout, pageTitle }: Topbar
     : 'U'
 
   return (
-    <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 sm:px-6 shrink-0">
-      {/* Left: mobile menu + page title */}
+    <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 sm:px-6 shrink-0 z-10">
+      {/* Left: mobile menu toggle + page title */}
       <div className="flex items-center gap-3">
         <Button
           variant="ghost"
@@ -44,19 +73,19 @@ export function Topbar({ user, onMobileMenuToggle, onLogout, pageTitle }: Topbar
           <Menu className="h-5 w-5" />
         </Button>
         {pageTitle && (
-          <h2 className="text-sm font-semibold text-slate-700 hidden sm:block">{pageTitle}</h2>
+          <h1 className="text-sm font-semibold text-slate-700 hidden sm:block">{pageTitle}</h1>
         )}
       </div>
 
-      {/* Right: actions + user */}
-      <div className="flex items-center gap-2">
+      {/* Right: notifications + user dropdown */}
+      <div className="flex items-center gap-1.5">
         <Button
           variant="ghost"
           size="icon"
-          className="text-slate-400 hover:text-slate-600"
+          className="text-slate-400 hover:text-slate-600 hover:bg-slate-100"
           aria-label="Notifications"
         >
-          <Bell className="h-5 w-5" />
+          <Bell className="h-4.5 w-4.5" />
         </Button>
 
         <DropdownMenu>
@@ -89,13 +118,17 @@ export function Topbar({ user, onMobileMenuToggle, onLogout, pageTitle }: Topbar
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem className="gap-2 cursor-pointer">
-              <User className="h-4 w-4 text-slate-400" />
-              Profile
+            <DropdownMenuItem asChild className="gap-2 cursor-pointer">
+              <Link href="/settings">
+                <User className="h-4 w-4 text-slate-400" />
+                Profile
+              </Link>
             </DropdownMenuItem>
-            <DropdownMenuItem className="gap-2 cursor-pointer">
-              <Settings className="h-4 w-4 text-slate-400" />
-              Settings
+            <DropdownMenuItem asChild className="gap-2 cursor-pointer">
+              <Link href="/settings">
+                <Settings className="h-4 w-4 text-slate-400" />
+                Settings
+              </Link>
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem
