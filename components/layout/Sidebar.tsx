@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { useState } from 'react'
 import {
   LayoutDashboard,
   Building2,
@@ -21,6 +22,7 @@ import {
   ClipboardList,
   Settings,
   ChevronRight,
+  ChevronDown,
   Zap,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -33,6 +35,7 @@ interface NavItem {
   icon: React.ElementType
   requiredPermissions?: Parameters<typeof hasAnyPermission>[1]
   superAdminOnly?: boolean
+  subItems?: NavItem[]
 }
 
 interface NavGroup {
@@ -102,6 +105,14 @@ const NAV_GROUPS: NavGroup[] = [
         href: '/inventory',
         icon: Boxes,
         requiredPermissions: ['inventory.view'],
+        subItems: [
+          {
+            label: 'Stock Movements',
+            href: '/inventory/movements',
+            icon: Boxes,
+            requiredPermissions: ['inventory.view'],
+          },
+        ],
       },
     ],
   },
@@ -127,7 +138,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       {
         label: 'Invoices',
-        href: '/invoices',
+        href: '/invoices/new',
         icon: FileText,
         requiredPermissions: ['invoices.view'],
       },
@@ -189,6 +200,7 @@ interface SidebarProps {
 
 export function Sidebar({ user, className, onNavigate }: SidebarProps) {
   const pathname = usePathname()
+  const [expandedItems, setExpandedItems] = useState<string[]>([])
 
   const isVisible = (item: NavItem): boolean => {
     if (!user) return false
@@ -199,6 +211,94 @@ export function Sidebar({ user, className, onNavigate }: SidebarProps) {
       return hasAnyPermission(user, item.requiredPermissions)
     }
     return true
+  }
+
+  const toggleExpanded = (href: string) => {
+    setExpandedItems((prev) =>
+      prev.includes(href)
+        ? prev.filter((item) => item !== href)
+        : [...prev, href]
+    )
+  }
+
+  const isItemActive = (item: NavItem): boolean => {
+    return pathname === item.href || pathname.startsWith(item.href + '/')
+  }
+
+  const renderNavItem = (item: NavItem): React.ReactNode => {
+    if (!isVisible(item)) return null
+
+    const Icon = item.icon
+    const isActive = isItemActive(item)
+    const hasSubItems = item.subItems && item.subItems.length > 0
+    const isExpanded = expandedItems.includes(item.href)
+    const visibleSubItems = hasSubItems ? item.subItems.filter(isVisible) : []
+
+    return (
+      <div key={item.href} className="space-y-0.5">
+        {hasSubItems ? (
+          <button
+            onClick={() => toggleExpanded(item.href)}
+            className={cn(
+              'w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors mb-0.5',
+              isActive
+                ? 'bg-blue-600 text-white'
+                : 'text-slate-300 hover:bg-[#1E293B] hover:text-white'
+            )}
+          >
+            <Icon className="w-4 h-4 shrink-0" />
+            <span className="flex-1 text-left">{item.label}</span>
+            <ChevronDown
+              className={cn(
+                'w-3.5 h-3.5 shrink-0 transition-transform',
+                isExpanded ? 'rotate-180' : ''
+              )}
+            />
+          </button>
+        ) : (
+          <Link
+            href={item.href}
+            onClick={onNavigate}
+            className={cn(
+              'flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors mb-0.5',
+              isActive
+                ? 'bg-blue-600 text-white'
+                : 'text-slate-300 hover:bg-[#1E293B] hover:text-white'
+            )}
+          >
+            <Icon className="w-4 h-4 shrink-0" />
+            <span className="flex-1">{item.label}</span>
+            {isActive && <ChevronRight className="w-3.5 h-3.5 opacity-60" />}
+          </Link>
+        )}
+
+        {hasSubItems && isExpanded && visibleSubItems.length > 0 && (
+          <div className="ml-4 space-y-0.5 border-l border-slate-700 pl-3">
+            {visibleSubItems.map((subItem) => {
+              const SubIcon = subItem.icon
+              const isSubActive = isItemActive(subItem)
+              return (
+                <Link
+                  key={subItem.href}
+                  href={subItem.href}
+                  onClick={onNavigate}
+                  className={cn(
+                    'flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors',
+                    isSubActive
+                      ? 'bg-blue-600 text-white'
+                      : 'text-slate-400 hover:bg-[#1E293B] hover:text-white'
+                  )}
+                >
+                  <SubIcon className="w-4 h-4 shrink-0" />
+                  <span className="flex-1">{subItem.label}</span>
+                  {isSubActive && <ChevronRight className="w-3.5 h-3.5 opacity-60" />}
+                </Link>
+              )
+            })}
+          </div>
+        )}
+      </div>
+    )
   }
 
   return (
@@ -227,31 +327,9 @@ export function Sidebar({ user, className, onNavigate }: SidebarProps) {
               <p className="px-3 mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-slate-500">
                 {group.label}
               </p>
-              {visibleItems.map((item) => {
-                const Icon = item.icon
-                const isActive =
-                  pathname === item.href || pathname.startsWith(item.href + '/')
-
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    onClick={onNavigate}
-                    className={cn(
-                      'flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors mb-0.5',
-                      isActive
-                        ? 'bg-blue-600 text-white'
-                        : 'text-slate-300 hover:bg-[#1E293B] hover:text-white'
-                    )}
-                  >
-                    <Icon className="w-4 h-4 shrink-0" />
-                    <span className="flex-1">{item.label}</span>
-                    {isActive && (
-                      <ChevronRight className="w-3.5 h-3.5 opacity-60" />
-                    )}
-                  </Link>
-                )
-              })}
+              <div className="space-y-0.5">
+                {visibleItems.map((item) => renderNavItem(item))}
+              </div>
             </div>
           )
         })}

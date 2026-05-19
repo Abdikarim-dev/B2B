@@ -404,6 +404,32 @@ export interface AuditLog {
 }
 
 // ============================================================
+// ROLE
+// ============================================================
+
+export interface Role {
+  id: string
+  businessId: string
+  name: string
+  description?: string
+  permissions: Permission[]
+  isSystemRole: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+// Permission module groupings for UI
+export interface PermissionGroup {
+  module: string
+  label: string
+  permissions: {
+    key: Permission
+    label: string
+    description?: string
+  }[]
+}
+
+// ============================================================
 // SETTINGS
 // ============================================================
 

@@ -2,310 +2,435 @@
 
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { ColumnDef } from '@tanstack/react-table'
-import { PageContainer, PageHeader, DataTable, SearchInput, StatusBadge } from '@/components/shared'
+import {
+  Plus,
+  Search,
+  MoreHorizontal,
+  Eye,
+  Check,
+  X,
+  Calendar,
+} from 'lucide-react'
+import Link from 'next/link'
+import { toast } from 'sonner'
+import { useAuth } from '@/contexts/auth-context'
+import { hasPermission } from '@/lib/permissions'
+import { fetchInvoices, confirmInvoice, cancelInvoice } from '@/data/api/invoices'
+import { fetchCustomers } from '@/data/api/customers'
+import { fetchBranches } from '@/data/api/businesses'
+import type { Invoice } from '@/types'
+import { formatDate, formatCurrency } from '@/data/helpers'
+import { PageContainer } from '@/components/shared/PageContainer'
+import { PageHeader } from '@/components/shared/PageHeader'
+import { DataTable } from '@/components/shared/DataTable'
+import type { ColumnDef } from '@tanstack/react-table'
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Textarea } from '@/components/ui/textarea'
-import { Label } from '@/components/ui/label'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Invoice } from '@/types'
-import { fetchInvoices } from '@/data/api/invoices'
-import { formatCurrency, formatDate } from '@/data/helpers'
-import { Plus, Eye, Send } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
+import { Skeleton } from '@/components/ui/skeleton'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog'
+
+// ─── Status Badges ───────────────────────────────────────────────────────────
+
+const invoiceStatusBadge = (status: Invoice['status']) => {
+  const variants: Record<Invoice['status'], { bg: string; text: string; label: string }> = {
+    DRAFT: { bg: 'bg-slate-100', text: 'text-slate-700', label: 'Draft' },
+    CONFIRMED: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'Confirmed' },
+    CANCELLED: { bg: 'bg-red-100', text: 'text-red-700', label: 'Cancelled' },
+  }
+  const v = variants[status]
+  return <Badge className={`${v.bg} ${v.text}`}>{v.label}</Badge>
+}
+
+const paymentStatusBadge = (status: Invoice['paymentStatus']) => {
+  const variants: Record<Invoice['paymentStatus'], { bg: string; text: string; label: string }> = {
+    UNPAID: { bg: 'bg-red-100', text: 'text-red-700', label: 'Unpaid' },
+    PARTIAL: { bg: 'bg-yellow-100', text: 'text-yellow-700', label: 'Partial' },
+    PAID: { bg: 'bg-green-100', text: 'text-green-700', label: 'Paid' },
+  }
+  const v = variants[status]
+  return <Badge className={`${v.bg} ${v.text}`}>{v.label}</Badge>
+}
+
+// ─── Actions Dialog ──────────────────────────────────────────────────────────
+
+interface ActionDialogProps {
+  open: boolean
+  invoice: Invoice | null
+  action: 'confirm' | 'cancel' | null
+  onClose: () => void
+  onConfirm: () => void
+  loading: boolean
+}
+
+function ActionDialog({ open, invoice, action, onClose, onConfirm, loading }: ActionDialogProps) {
+  const title = action === 'confirm' ? 'Confirm Invoice' : 'Cancel Invoice'
+  const message =
+    action === 'confirm'
+      ? `Are you sure you want to confirm invoice ${invoice?.invoiceNumber}?`
+      : `Are you sure you want to cancel invoice ${invoice?.invoiceNumber}? This action cannot be undone.`
+  const buttonText = action === 'confirm' ? 'Confirm Invoice' : 'Cancel Invoice'
+
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+        </DialogHeader>
+        <p className="text-sm text-slate-600">{message}</p>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={loading}>
+            Close
+          </Button>
+          <Button
+            onClick={onConfirm}
+            disabled={loading}
+            variant={action === 'cancel' ? 'destructive' : 'default'}
+          >
+            {loading ? 'Processing...' : buttonText}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// ─── Invoices Page ───────────────────────────────────────────────────────────
 
 export default function InvoicesPage() {
-  const [searchTerm, setSearchTerm] = useState('')
-  const [filterStatus, setFilterStatus] = useState<string>('')
-  const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null)
-  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
-  const [formData, setFormData] = useState({
-    customerName: '',
-    customerEmail: '',
-    total: '',
-    notes: '',
+  const { user } = useAuth()
+  const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState<string>('')
+  const [paymentStatusFilter, setPaymentStatusFilter] = useState<string>('')
+  const [branchFilter, setBranchFilter] = useState<string>('')
+  const [customerFilter, setCustomerFilter] = useState<string>('')
+  const [dateFrom, setDateFrom] = useState<string>('')
+  const [dateTo, setDateTo] = useState<string>('')
+  const [actionDialog, setActionDialog] = useState<{ open: boolean; invoice: Invoice | null; action: 'confirm' | 'cancel' | null }>({
+    open: false,
+    invoice: null,
+    action: null,
   })
+  const [actionLoading, setActionLoading] = useState(false)
 
+  // Queries
   const invoicesQuery = useQuery({
-    queryKey: ['invoices'],
-    queryFn: () => fetchInvoices(),
+    queryKey: ['invoices', statusFilter, paymentStatusFilter, branchFilter, customerFilter],
+    queryFn: () =>
+      fetchInvoices({
+        businessId: user?.businessId,
+        branchId: branchFilter || undefined,
+        status: (statusFilter as Invoice['status']) || undefined,
+        paymentStatus: (paymentStatusFilter as Invoice['paymentStatus']) || undefined,
+        customerId: customerFilter || undefined,
+      }).then((res) => res.data),
   })
 
-  let filteredInvoices = invoicesQuery.data?.data ?? []
+  const branchesQuery = useQuery({
+    queryKey: ['branches'],
+    queryFn: () => fetchBranches({ businessId: user?.businessId }).then((res) => res.data),
+  })
 
-  if (searchTerm) {
-    filteredInvoices = filteredInvoices.filter(
-      (inv) =>
-        inv.invoiceNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        inv.customerName?.toLowerCase().includes(searchTerm.toLowerCase())
-    )
-  }
+  const customersQuery = useQuery({
+    queryKey: ['customers'],
+    queryFn: () => fetchCustomers({ businessId: user?.businessId }).then((res) => res.data),
+  })
 
-  if (filterStatus) {
-    filteredInvoices = filteredInvoices.filter((inv) => inv.status === filterStatus)
-  }
+  // Filter invoices by search and dates
+  const filteredInvoices = invoicesQuery.data?.filter((inv) => {
+    const searchLower = search.toLowerCase()
+    const matchesSearch =
+      inv.invoiceNumber.toLowerCase().includes(searchLower) ||
+      inv.customerName?.toLowerCase().includes(searchLower) ||
+      inv.id.toLowerCase().includes(searchLower)
 
+    let matchesDate = true
+    if (dateFrom || dateTo) {
+      const invDate = new Date(inv.createdAt).getTime()
+      if (dateFrom) matchesDate = matchesDate && invDate >= new Date(dateFrom).getTime()
+      if (dateTo) {
+        const toDate = new Date(dateTo)
+        toDate.setHours(23, 59, 59, 999)
+        matchesDate = matchesDate && invDate <= toDate.getTime()
+      }
+    }
+
+    return matchesSearch && matchesDate
+  }) || []
+
+  // Columns
   const columns: ColumnDef<Invoice>[] = [
     {
       accessorKey: 'invoiceNumber',
       header: 'Invoice #',
       cell: ({ row }) => (
-        <button
-          onClick={() => setSelectedInvoice(row.original)}
-          className="font-medium text-blue-600 hover:underline flex items-center gap-1"
-        >
-          <Eye className="w-4 h-4" />
+        <Link href={`/invoices/${row.original.id}`} className="font-medium text-blue-600 hover:underline">
           {row.original.invoiceNumber}
-        </button>
+        </Link>
       ),
     },
     {
       accessorKey: 'customerName',
       header: 'Customer',
-      cell: ({ row }) => <span className="font-medium">{row.original.customerName}</span>,
+      cell: ({ row }) => row.original.customerName || '–',
+    },
+    {
+      accessorKey: 'branchName',
+      header: 'Branch',
+      cell: ({ row }) => row.original.branchName || '–',
     },
     {
       accessorKey: 'total',
       header: 'Amount',
-      cell: ({ row }) => <span className="font-semibold">{formatCurrency(row.original.total)}</span>,
-    },
-    {
-      accessorKey: 'createdAt',
-      header: 'Date',
-      cell: ({ row }) => <span className="text-sm">{formatDate(row.original.createdAt)}</span>,
-    },
-    {
-      accessorKey: 'paymentStatus',
-      header: 'Payment',
-      cell: ({ row }) => {
-        const paymentStatusVariant: Record<string, 'paid' | 'pending' | 'partial'> = {
-          PAID: 'paid',
-          UNPAID: 'pending',
-          PARTIAL: 'partial',
-        }
-        return <StatusBadge variant={paymentStatusVariant[row.original.paymentStatus] ?? 'pending'} />
-      },
+      cell: ({ row }) => formatCurrency(row.original.total),
     },
     {
       accessorKey: 'status',
       header: 'Status',
-      cell: ({ row }) => {
-        const statusVariant: Record<string, 'draft' | 'confirmed' | 'cancelled'> = {
-          DRAFT: 'draft',
-          CONFIRMED: 'confirmed',
-          CANCELLED: 'cancelled',
-        }
-        return <StatusBadge variant={statusVariant[row.original.status] ?? 'draft'} />
-      },
+      cell: ({ row }) => invoiceStatusBadge(row.original.status),
+    },
+    {
+      accessorKey: 'paymentStatus',
+      header: 'Payment',
+      cell: ({ row }) => paymentStatusBadge(row.original.paymentStatus),
+    },
+    {
+      accessorKey: 'createdAt',
+      header: 'Date',
+      cell: ({ row }) => formatDate(row.original.createdAt),
+    },
+    {
+      id: 'actions',
+      cell: ({ row }) => (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="sm">
+              <MoreHorizontal className="w-4 h-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem asChild>
+              <Link href={`/invoices/${row.original.id}`} className="flex items-center gap-2">
+                <Eye className="w-4 h-4" />
+                View
+              </Link>
+            </DropdownMenuItem>
+            {row.original.status === 'DRAFT' && hasPermission(user, 'invoices.confirm') && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={() =>
+                    setActionDialog({ open: true, invoice: row.original, action: 'confirm' })
+                  }
+                  className="text-blue-600"
+                >
+                  <Check className="w-4 h-4 mr-2" />
+                  Confirm
+                </DropdownMenuItem>
+              </>
+            )}
+            {row.original.status !== 'CANCELLED' && hasPermission(user, 'invoices.cancel') && (
+              <DropdownMenuItem
+                onClick={() => setActionDialog({ open: true, invoice: row.original, action: 'cancel' })}
+                className="text-red-600"
+              >
+                <X className="w-4 h-4 mr-2" />
+                Cancel
+              </DropdownMenuItem>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ),
     },
   ]
 
-  const handleCreateInvoice = () => {
-    console.log('Create invoice:', formData)
-    setFormData({
-      customerName: '',
-      customerEmail: '',
-      total: '',
-      notes: '',
-    })
-    setIsCreateDialogOpen(false)
+  // Handlers
+  const handleActionConfirm = async () => {
+    if (!actionDialog.invoice) return
+    setActionLoading(true)
+    try {
+      if (actionDialog.action === 'confirm') {
+        await confirmInvoice(actionDialog.invoice.id)
+        toast.success('Invoice confirmed')
+      } else {
+        await cancelInvoice(actionDialog.invoice.id)
+        toast.success('Invoice cancelled')
+      }
+      invoicesQuery.refetch()
+      setActionDialog({ open: false, invoice: null, action: null })
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Action failed')
+    } finally {
+      setActionLoading(false)
+    }
   }
 
-  const totalAmount = filteredInvoices.reduce((sum, inv) => sum + inv.total, 0)
-  const paidAmount = filteredInvoices
-    .filter((inv) => inv.paymentStatus === 'PAID')
-    .reduce((sum, inv) => sum + inv.paidAmount, 0)
-  const pendingAmount = filteredInvoices
-    .filter((inv) => inv.paymentStatus === 'UNPAID')
-    .reduce((sum, inv) => sum + inv.balanceDue, 0)
-  const partialAmount = filteredInvoices
-    .filter((inv) => inv.paymentStatus === 'PARTIAL')
-    .reduce((sum, inv) => sum + inv.balanceDue, 0)
+  const hasActiveFilters = search || statusFilter || paymentStatusFilter || branchFilter || customerFilter || dateFrom || dateTo
 
   return (
     <PageContainer>
-      <div className="flex items-center justify-between mb-8">
-        <PageHeader title="Invoices" description="Manage your invoices and payment tracking" />
-        <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
-          <DialogTrigger asChild>
-            <Button className="gap-2">
-              <Plus className="w-4 h-4" />
-              Create Invoice
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-lg">
-            <DialogHeader>
-              <DialogTitle>Create New Invoice</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4">
-              <div>
-                <Label htmlFor="customerName">Customer Name</Label>
-                <Input
-                  id="customerName"
-                  placeholder="Customer Name"
-                  value={formData.customerName}
-                  onChange={(e) => setFormData({ ...formData, customerName: e.target.value })}
-                />
-              </div>
-              <div>
-                <Label htmlFor="customerEmail">Customer Email</Label>
-                <Input
-                  id="customerEmail"
-                  type="email"
-                  placeholder="customer@company.com"
-                  value={formData.customerEmail}
-                  onChange={(e) => setFormData({ ...formData, customerEmail: e.target.value })}
-                />
-              </div>
-              <div>
-                <Label htmlFor="total">Amount</Label>
-                <Input
-                  id="total"
-                  type="number"
-                  placeholder="0.00"
-                  value={formData.total}
-                  onChange={(e) => setFormData({ ...formData, total: e.target.value })}
-                />
-              </div>
-              <div>
-                <Label htmlFor="notes">Notes</Label>
-                <Textarea
-                  id="notes"
-                  placeholder="Invoice details..."
-                  value={formData.notes}
-                  onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                />
-              </div>
-              <Button onClick={handleCreateInvoice} className="w-full">
-                Create Invoice
+      <PageHeader
+        title="Invoices"
+        description="Manage and track all invoices"
+        action={
+          hasPermission(user, 'invoices.create') && (
+            <Link href="/invoices/new">
+              <Button>
+                <Plus className="w-4 h-4 mr-2" />
+                New Invoice
               </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
-      </div>
+            </Link>
+          )
+        }
+      />
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-        <Card>
-          <CardContent className="pt-6">
-            <p className="text-xs text-muted-foreground">Total Invoices</p>
-            <p className="text-2xl font-bold mt-1">{formatCurrency(totalAmount)}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <p className="text-xs text-muted-foreground">Paid</p>
-            <p className="text-2xl font-bold text-green-600 mt-1">{formatCurrency(paidAmount)}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <p className="text-xs text-muted-foreground">Pending</p>
-            <p className="text-2xl font-bold text-amber-600 mt-1">{formatCurrency(pendingAmount)}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <p className="text-xs text-muted-foreground">Partial</p>
-            <p className="text-2xl font-bold text-blue-600 mt-1">{formatCurrency(partialAmount)}</p>
-          </CardContent>
-        </Card>
-      </div>
-
+      {/* Filters */}
       <div className="space-y-4 mb-6">
-        <SearchInput placeholder="Search invoices by number or customer..." value={searchTerm} onChange={setSearchTerm} />
-        <Select value={filterStatus} onValueChange={setFilterStatus}>
-          <SelectTrigger className="w-[200px]">
-            <SelectValue placeholder="Filter by status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="">All Statuses</SelectItem>
-            <SelectItem value="DRAFT">Draft</SelectItem>
-            <SelectItem value="CONFIRMED">Confirmed</SelectItem>
-            <SelectItem value="CANCELLED">Cancelled</SelectItem>
-          </SelectContent>
-        </Select>
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <Input
+              placeholder="Search invoices, customers..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-10"
+            />
+          </div>
+          {hasActiveFilters && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setSearch('')
+                setStatusFilter('')
+                setPaymentStatusFilter('')
+                setBranchFilter('')
+                setCustomerFilter('')
+                setDateFrom('')
+                setDateTo('')
+              }}
+            >
+              Clear
+            </Button>
+          )}
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-6">
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="text-sm">
+              <SelectValue placeholder="Invoice Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="">All Statuses</SelectItem>
+              <SelectItem value="DRAFT">Draft</SelectItem>
+              <SelectItem value="CONFIRMED">Confirmed</SelectItem>
+              <SelectItem value="CANCELLED">Cancelled</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <Select value={paymentStatusFilter} onValueChange={setPaymentStatusFilter}>
+            <SelectTrigger className="text-sm">
+              <SelectValue placeholder="Payment Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="">All Payments</SelectItem>
+              <SelectItem value="UNPAID">Unpaid</SelectItem>
+              <SelectItem value="PARTIAL">Partial</SelectItem>
+              <SelectItem value="PAID">Paid</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <Select value={branchFilter} onValueChange={setBranchFilter}>
+            <SelectTrigger className="text-sm">
+              <SelectValue placeholder="Branch" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="">All Branches</SelectItem>
+              {branchesQuery.data?.map((branch) => (
+                <SelectItem key={branch.id} value={branch.id}>
+                  {branch.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Select value={customerFilter} onValueChange={setCustomerFilter}>
+            <SelectTrigger className="text-sm">
+              <SelectValue placeholder="Customer" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="">All Customers</SelectItem>
+              {customersQuery.data?.map((customer) => (
+                <SelectItem key={customer.id} value={customer.id}>
+                  {customer.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Input
+            type="date"
+            value={dateFrom}
+            onChange={(e) => setDateFrom(e.target.value)}
+            placeholder="From"
+            className="text-sm"
+          />
+
+          <Input
+            type="date"
+            value={dateTo}
+            onChange={(e) => setDateTo(e.target.value)}
+            placeholder="To"
+            className="text-sm"
+          />
+        </div>
       </div>
 
-      <Tabs defaultValue="invoices" className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="invoices">All Invoices</TabsTrigger>
-          <TabsTrigger value="details">Invoice Details</TabsTrigger>
-        </TabsList>
+      {/* Table */}
+      {invoicesQuery.isLoading ? (
+        <div className="space-y-3">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <Skeleton key={i} className="h-16 w-full" />
+          ))}
+        </div>
+      ) : (
+        <DataTable
+          columns={columns}
+          data={filteredInvoices}
+          searchTerm={search}
+          emptyMessage="No invoices found"
+        />
+      )}
 
-        <TabsContent value="invoices">
-          <DataTable columns={columns} data={filteredInvoices} />
-        </TabsContent>
-
-        <TabsContent value="details">
-          {selectedInvoice ? (
-            <div className="space-y-6">
-              <Card>
-                <CardHeader>
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <CardTitle>{selectedInvoice.invoiceNumber}</CardTitle>
-                      <p className="text-sm text-muted-foreground">{selectedInvoice.customerName}</p>
-                    </div>
-                    <StatusBadge variant={selectedInvoice.status === 'DRAFT' ? 'draft' : 'confirmed'} />
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <p className="text-xs text-muted-foreground">Total Amount</p>
-                      <p className="text-2xl font-bold">{formatCurrency(selectedInvoice.total)}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground">Invoice Date</p>
-                      <p className="font-medium">{formatDate(selectedInvoice.createdAt)}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground">Updated</p>
-                      <p className="font-medium">{formatDate(selectedInvoice.updatedAt)}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground">Balance Due</p>
-                      <p className="font-medium">{formatCurrency(selectedInvoice.balanceDue)}</p>
-                    </div>
-                  </div>
-
-                  <div>
-                    <h4 className="font-semibold mb-3">Items</h4>
-                    <div className="space-y-2">
-                      {selectedInvoice.items.map((item) => (
-                        <div key={item.id} className="flex items-center justify-between p-3 border border-border rounded-lg">
-                          <div>
-                            <p className="font-medium text-sm">{item.productName}</p>
-                            <p className="text-xs text-muted-foreground">Qty: {item.quantity}</p>
-                          </div>
-                          <p className="font-semibold">{formatCurrency(item.lineTotal)}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="flex gap-3">
-                    <Button className="gap-2">
-                      <Send className="w-4 h-4" />
-                      Send Invoice
-                    </Button>
-                    {selectedInvoice.paymentStatus !== 'PAID' && <Button variant="outline">Record Payment</Button>}
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          ) : (
-            <Card>
-              <CardContent className="pt-12 text-center">
-                <p className="text-muted-foreground">Select an invoice to view details</p>
-              </CardContent>
-            </Card>
-          )}
-        </TabsContent>
-      </Tabs>
+      {/* Action Dialog */}
+      <ActionDialog
+        open={actionDialog.open}
+        invoice={actionDialog.invoice}
+        action={actionDialog.action}
+        onClose={() => setActionDialog({ open: false, invoice: null, action: null })}
+        onConfirm={handleActionConfirm}
+        loading={actionLoading}
+      />
     </PageContainer>
   )
 }
